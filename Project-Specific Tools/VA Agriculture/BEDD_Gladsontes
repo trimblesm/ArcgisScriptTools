@@ -1,0 +1,190 @@
+#import modules
+import arcpy, numpy, os
+from arcpy import env, sa
+from arcpy.sa import *
+arcpy.env.overwriteOutput = True
+print "..."
+
+
+#get properties of template raster for outputs
+template = arcpy.Raster("C:\Users\strimble\Documents\Raster\QT_antiquated\Analysis\ReferenceTemplate.tif")
+columns = arcpy.GetRasterProperties_management(template, "COLUMNCOUNT")
+cols = columns.getOutput(0)
+rowses = arcpy.GetRasterProperties_management(template, "ROWCOUNT")
+rows = rowses.getOutput(0)
+
+
+#create variables from template raster for saving those outputs
+descData = arcpy.Describe(template)
+cellSize = descData.meanCellHeight
+extent = descData.Extent
+spatRef = descData.spatialReference
+point = arcpy.Point(extent.XMin, extent.YMin)
+
+
+#build empty 3D array
+#GrowDays = 305 - 91 #growing season is April 1 (day 91) to October 31 (day 304) - should be 214
+datablock = numpy.zeros((int(rows), int(cols), 214))
+print "empty 3D array created"
+print "..."
+
+
+
+#NOW, SHALL WE BEGIN?
+
+
+
+#fill array with K adjusted z rasters
+arcpy.env.workspace = "C:\\Users\\strimble\\Documents\\Raster\\Daily\\DIntMea\\DIntMea_Avg"
+k = 0
+listZ = arcpy.ListRasters("*z","")
+print listZ
+
+for z in enumerate(listZ):
+    while k < len(listZ):
+        arcpy.CheckOutExtension("Spatial")
+        inRast = listZ[k]
+        dayNum = int(inRast[7:-1])
+            
+        #check raster represents a day in the growing season
+        if dayNum in range(91,305):
+                #populate 3D with appropriately adjusted K value
+                index = dayNum - 91
+                dayArray = arcpy.RasterToNumPyArray(inRast)
+                print "day " + str(dayNum) + " is in growing season... adjusting with K value..."
+
+                for i in range((int(rows))):
+
+                        for j in range((int(cols))):
+
+                                if index in range(123):
+
+                                        if index in range(62):
+                                                if index in range(31):
+                                                        if dayArray[i,j] < 0:
+                                                            datablock[i,j,index] == 0
+                                                        else:
+                                                            datablock[i,j,index] = dayArray[i,j]*0.993
+                                                elif index in range(31,62):
+                                                        if dayArray[i,j] < 0:
+                                                            datablock[i,j,index] == 0
+                                                        else:
+                                                            datablock[i,j,index] = dayArray[i,j]*0.987
+
+                                        elif index in range(62,123):
+                                                if index in range(62,92):
+                                                        if dayArray[i,j] < 0:
+                                                            datablock[i,j,index] == 0
+                                                        else:
+                                                            datablock[i,j,index] = dayArray[i,j]*0.984
+                                                elif index in range(92,123):
+                                                        if dayArray[i,j] < 0:
+                                                            datablock[i,j,index] == 0
+                                                        else:
+                                                            datablock[i,j,index] = dayArray[i,j]*0.985
+
+                                elif index in range(123,205):
+
+                                        if index in range(123,184):
+                                                if index in range(123,153):
+                                                        if dayArray[i,j] < 0:
+                                                            datablock[i,j,index] == 0
+                                                        else:
+                                                            datablock[i,j,index] = dayArray[i,j]*0.990
+                                                elif index in range(153,184):
+                                                        if dayArray[i,j] < 0:
+                                                            datablock[i,j,index] == 0
+                                                        else:
+                                                            datablock[i,j,index] = dayArray[i,j]*0.998
+
+                                        elif index in range(184,205):
+                                                if dayArray[i,j] < 0:
+                                                    datablock[i,j,index] == 0
+                                                else:
+                                                    datablock[i,j,index] = dayArray[i,j]*1.007
+                                        
+        else:
+                print "day " + str(dayNum) + " is NOT in growing season... checking next..."
+
+        k = k + 1
+
+
+
+#3D aray is now filled with appropriately adjust K value, need to add appropriate TR value 
+
+
+
+#list rasters in workspace numOrder
+arcpy.env.workspace = "C:\\Users\\strimble\\Documents\\Raster\\Daily\\DIntMea\\numOrder"
+a = 0
+b = 1
+listHL = arcpy.ListRasters("*")
+print listHL
+
+while a < len(listHL):
+    arcpy.CheckOutExtension("Spatial")
+    inRast1 = listHL[a]
+    inRast2 = listHL[b]
+    yearDay = int(inRast1[0:-6])
+
+    #check that raster pair represents a day in the growing season
+    if yearDay in range(91,305):
+
+        print "day " + str(yearDay) + " is in growing season... calculating..."
+
+        minus = arcpy.sa.Minus(inRast1, inRast2)
+        arrayMinus = arcpy.RasterToNumPyArray(minus)
+
+        #populate 3D array, adjust with TR calculation
+        index2 = yearDay - 91
+        for i in range((int(rows))):
+            for j in range((int(cols))):
+                if arrayMinus[i,j] > 13:
+                    datablock[i,j,index2] = datablock[i,j,index2] + ((arrayMinus[i,j] - 13) * 0.25)
+                elif arrayMinus[i,j] < 10:
+                    datablock[i,j,index2] = datablock[i,j,index2] + ((arrayMinus[i,j] - 10) * 0.25)
+        print "TRdiff added to day " + inRast1[0:-6]
+
+    else:
+        print "day " + inRast1[0:-6] + " is not a growing degree day... checking next..."
+    
+    #jump to next pair
+    a = a + 2
+    b = b + 2
+
+print "3D array filled with appropraite Gladstones adjusted values"
+print "..."
+
+
+
+#adjust all values to min(value, 9)
+index3 = 0
+while index3 < 214:
+    for i in range((int(rows))):
+        for j in range((int(cols))):
+            if datablock[i,j,index3] > 9:
+                datablock[i,j,index3] == 9
+    print "min (value or 9) adjusted for index " + str(index3)
+    index3 = index3 + 1
+print "all values capped at 9"
+
+
+
+#create empty 2D raster to hold summation values, fill
+arrBEDD = numpy.zeros((int(rows), int(cols)))
+print "BEDD array created"
+for i in range((int(rows))):
+    for j in range((int(cols))):
+        arrBEDD[i,j] = sum(datablock[i,j,0:214])
+
+
+
+#save output as a new raster
+rasBEDD = arcpy.NumPyArrayToRaster(arrBEDD, point, cellSize, cellSize)
+arcpy.DefineProjection_management(rasBEDD, spatRef)
+rasBEDD.save("C:\\Users\\strimble\\Documents\\Raster\\Daily\\DIntMea" + "\\" + "BEDD11.tif")
+print "BEDD raster saved"
+
+
+
+print "the end"
