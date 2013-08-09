@@ -1,0 +1,104 @@
+import arcpy
+import numpy
+from arcpy import env
+arcpy.env.workspace = "C:\\Users\\strimble\\Documents\\Raster\\Decad\\DecMea_L"
+from arcpy import sa
+from arcpy.sa import *
+
+
+#create empty 3D array
+template = arcpy.Raster("C:\Users\strimble\Documents\Raster\QT_antiquated\Analysis\ReferenceTemplate.tif")
+columns = arcpy.GetRasterProperties_management(template, "COLUMNCOUNT")
+cols = columns.getOutput(0)
+rowses = arcpy.GetRasterProperties_management(template, "ROWCOUNT")
+rows = rowses.getOutput(0)
+#3rd dimension of array is total decads (37) and hard-coded for now. It could also be modified to days in style of above script
+datablock = numpy.zeros((int(rows), int(cols), 37))
+print "empty 3D array created"
+print "..."
+
+
+#iterate through raster list, fill 3D array with raster values
+k = 0
+rasters = arcpy.ListRasters()
+raster = rasters[k]
+for raster in enumerate(rasters):
+        raster = rasters[k]
+        decad = raster[9:-4] #this identifies the part of each raster name that identifies the decad, values are 1-37
+        decadindex = int(decad) - 1
+        rasterarray = arcpy.RasterToNumPyArray(raster)
+        print "decad " + str(decad) + " converted to array"
+        for i in range((int(rows))):
+                for j in range((int(cols))):
+                        datablock[i,j,decadindex] = rasterarray[i,j]
+        print "array filled with raster values"
+        k = k + 1
+print "..."
+
+
+#iterate through 3D array, convert to values to zeroes (above frost) or decad value (frost)
+m = 0
+raster = rasters[m]
+for raster in enumerate(rasters):
+        raster = rasters[m]
+        decad = raster[9:-4] #this identifies the part of each raster name that identifies the decad, values are 1-37
+        decadindex = int(decad) - 1
+        for i in range((int(rows))):
+                for j in range((int(cols))):
+                        if datablock[i,j,decadindex] <= 273.15:
+                                datablock[i,j,decadindex] = decad
+                        else:
+                                datablock[i,j,decadindex] = 0
+        m = m + 1
+print "array values converted"
+print "..."
+
+#create empty arrays for frost date values
+LastSpring = numpy.zeros((int(rows), int(cols)))
+FirstFall = numpy.zeros((int(rows), int(cols)))
+print "empty arrays for frost dates created"
+print "..."
+
+#call 3D array for spring frost and fall frost values
+for i in range((int(rows))):
+        for j in range((int(cols))):
+                colddayS = datablock[i,j,0:18]
+                LastSpring[i,j] = max(colddayS) + 1
+print "last day of spring frost found for all [i,j]"
+for i in range((int(rows))):
+        for j in range((int(cols))):
+                subset = []
+                colddayF = datablock[i,j,19:36]
+                for a in colddayF:
+                        if a > 0:
+                                subset.append(a)
+                                FirstFall[i,j] = min(subset)
+print "first day of fall frost found for all [i,j]"
+print "..."
+
+
+#allow the following to overwrite existing files
+arcpy.env.overwriteOutput = True
+
+#create variables describing format of the empty rasters (for frost date values)
+descData = arcpy.Describe(template)
+cellSize = descData.meanCellHeight
+extent = descData.Extent
+spatRef = descData.spatialReference
+point = arcpy.Point(extent.XMin, extent.YMin)
+print "empty rasters for frost dates created"
+print "..."
+
+#assign array max/min values (last/first frost date) to the empty rasters
+SpringFrost = arcpy.NumPyArrayToRaster(LastSpring, point, cellSize, cellSize)
+arcpy.DefineProjection_management(SpringFrost, spatRef)
+SpringFrost.save("C:\Users\strimble\Documents\Raster\FrostIndx" + "\\" + "LSF_decad.tif")
+print "spring frost raster saved"
+FallFrost = arcpy.NumPyArrayToRaster(FirstFall, point, cellSize, cellSize)
+arcpy.DefineProjection_management(FallFrost, spatRef)
+FallFrost.save("C:\Users\strimble\Documents\Raster\FrostIndx" + "\\" + "FFF_decad.tif")
+print "fall frost raster saved"
+print "..."
+
+
+print "the end"
